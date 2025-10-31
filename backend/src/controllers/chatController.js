@@ -1,82 +1,110 @@
-// Performs the following
+import { Chat } from "../models/chatModel.js";
+// Import the correctly instantiated GenerativeModel for chat operations.
+import { ai } from "../services/geminiService.js";
+
+// WARNING: In-memory store; chats will be lost on server restart.
+const activeChats = {};
+
 /**
- * Receiving user messages
- * Assigning incremental session IDs for new chats
- * Saving messages (user + AI) in MongoDB
- * Calling Gemini for AI responses
- * Returning the full chat history to the frontend
-*/
+ * Maps DB role (User, AI) to Gemini role (user, model).
+ */
+const mapToGeminiRole = (dbRole) => {
+  return dbRole === "User" ? "user" : "model";
+};
 
-import { Chat } from "../models/chatModel";
-import ai from "../services/geminiService";
-import { getNextSessionId } from "../models/counter";
+// Create a new chat session
+export const createNewChat = async (req, res) => {
+  try {
+    // 1. Create a new chat document in MongoDB.
+    const chat = new Chat({
+      messages: [],
+    });
+    await chat.save();
+    const sessionId = chat._id.toString();
 
-const activeChats = {}
+    // 2. Create a new Gemini chat session
+    const geminiChat = ai.chats.create({
+      model: "gemini-2.5-flash",
+      history: [],
+    });
+    activeChats[sessionId] = geminiChat;
 
-//Create a new chat session
-export const createNewChat = async(req, res) => {
-    try {
+    console.log(activeChats)
 
-        //Create a new chat document in MongoDB
-        const chat = new Chat({
-            sessionId,
-            messages: []
-        })
+    // Successful chat creation.
+    res.status(201).json({ sessionId });
+  } catch (error) {
+    console.error("Create Chat Error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to create chat session", message: error.message });
+  }
+};
 
-        await chat.save();
+// Send message to current chat
+export const sendMessageToChat = async (req, res) => {
+  const { sessionId } = req.params;
+  const { message } = req.body;
 
-        //Use mongodb _id as the session id
-        const sessionId = chat._id.toString();
+  if (!message) {
+    return res.status(400).json({ error: "Message is required" });
+  }
 
-        //Create gemini chat session
-        const geminiChat = ai.chats.create({model: "gemini-2.5.flash"});
-        activeChats[sessionId] = geminiChat
-
-        //successful chat creation
-        res.status(201).json({sessionId})
-    } catch (error) {
-        res.status(500).json({ error: "Failed to create chat session", message: error.message });
+  try {
+    // 1. Get the chat from MongoDB
+    const chat = await Chat.findById(sessionId);
+    if (!chat) {
+      return res.status(404).json({ error: "Chat session not found" });
     }
-}
 
-//Send message to current chat
-export const sendMessageToChat = async(req, res) => {
-    try {
-        const {sessionId} = req.params
-        const userMessage = req.body.message
-
-        //Retrieve chat session from MongoDB
-        const chat = Chat.findById({sessionId})
-        if(!chat) return res.status(404).json({ error: "Chat session not found in database" });
-
-        //Save user message in MongoDB
-        chat.messages.push({role: "User", content: userMessage})
-
-        //Map message to gemini roles
-        const geminiHistory = chat.messages.map((msg) => ({
-            role: msg.role === "User" ? "user" : "model",
-            parts: [{text: msg.content}]
-        }))
-
-        //Get gemini chat instance
-        let geminiChat = activeChats[sessionId]
-        if(!geminiChat){
-            geminiChat = ai.chats.create({ model: "gemini-2.5-flash", history: geminiHistory });
-            activeChats[sessionId] = geminiChat
-        }
-
-        //Send message to gemini
-        const response = await geminiChat.sendMessage({message: userMessage})
-
-        //Save gemini response in Mongo
-        chat.messages.push({role: "AI", content: response.text})
-        await chat.save();
-
-        //Return response to frontend
-        res.status(200).json({response: response.text, messages: chat.messages})
-        
-    } catch (error) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to send message", message: error.message });
+    // 2. Get the Gemini chat instance
+    const geminiChat = activeChats[sessionId];
+    if (!geminiChat) {
+      return res.status(404).json({ error: "Gemini chat session not found" });
     }
-}
+
+    // 3. Save user message to MongoDB
+    chat.messages.push({
+      role: "User",
+      content: message,
+    });
+
+    // 4. Send message to Gemini and get response
+    const result = await geminiChat.sendMessageStream({
+      message: message,
+    });
+    const aiMessage = result.text;
+
+    // 5. Save AI response to MongoDB
+    chat.messages.push({
+      role: "AI",
+      content: aiMessage,
+    });
+    await chat.save();
+
+    // 6. Send response back to client
+    res.json({
+      message: aiMessage,
+      messages: chat.messages,
+    });
+  } catch (error) {
+    console.error("Send Message Error:", error);
+    res.status(500).json({
+      error: "Failed to process message",
+      message: error.message,
+    });
+  }
+};
+
+// Endpoint to retrieve history for an existing chat.
+export const getChatHistory = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const chat = await Chat.findById(sessionId).select("messages");
+    if (!chat) return res.status(404).json({ error: "Chat session not found" });
+
+    res.status(200).json({ messages: chat.messages });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+};

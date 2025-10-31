@@ -1,22 +1,17 @@
 /**
- * Stores each chat session in MOngoDB
+ * Stores each chat session in MongoDB
  * Keeps all messages in a single document
  * supports multi-turn context
  */
 
 import mongoose from "mongoose";
 
-const messageSchema = new mongoose.Schema({
-    role:{type:String, enum:["User", "AI"], required: true},
-    content: {type:String, required: true}
-},
-{_id: false}
-);
-
 const chatSchema = new mongoose.Schema(
   {
-    sessionId: { type: Number, unique: true, required: true },
-    messages: [messageSchema],
+    messages: [{
+      role:{type:String, enum:["User", "AI"], required: true},
+      content: {type:String, required: true}
+    }],
   },
   { timestamps: true } // to add created and updated timestamp
 );
