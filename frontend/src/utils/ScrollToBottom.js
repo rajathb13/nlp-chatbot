@@ -1,0 +1,1 @@
+//Helper to auto-scroll to latest message

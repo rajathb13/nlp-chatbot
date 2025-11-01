@@ -1,0 +1,1 @@
+//Renders individual message bubbles in the chat window

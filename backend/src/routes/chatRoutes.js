@@ -1,5 +1,5 @@
 import express from 'express'
-import { createNewChat, sendMessageToChat } from '../controllers/chatController.js'
+import { createNewChat, sendMessageToChat, getAllChats } from '../controllers/chatController.js'
 
 const router = express.Router();
 
@@ -9,4 +9,5 @@ router.post('/chats', createNewChat)
 //Send message to existing chat
 router.post('/chats/:sessionId/message', sendMessageToChat)
 
-export default router
+//Get all chat sessions
+router.get('/getAllChats', getAllChats)

@@ -52,28 +52,30 @@ export const sendMessageToChat = async (req, res) => {
 
   try {
     // 1. Get the chat from MongoDB
-    const chat = await Chat.findById(sessionId);
-    if (!chat) {
-      return res.status(404).json({ error: "Chat session not found" });
+    let chat  
+    if (sessionId) {
+      chat = await Chat.findById(sessionId);
+    } else {
+      chat = new Chat({ messages: [] });
     }
 
-    // 2. Get the Gemini chat instance
-    const geminiChat = activeChats[sessionId];
-    if (!geminiChat) {
-      return res.status(404).json({ error: "Gemini chat session not found" });
-    }
-
-    // 3. Save user message to MongoDB
+    // 2. Save user message to MongoDB
     chat.messages.push({
       role: "User",
       content: message,
     });
 
+    // 3. Get the Gemini chat instance
+    const geminiChat = activeChats[sessionId];
+    if (!geminiChat) {
+      return res.status(404).json({ error: "Gemini chat session not found" });
+    }
+
     // 4. Send message to Gemini and get response
-    const result = await geminiChat.sendMessageStream({
+    const response = await geminiChat.sendMessage({
       message: message,
     });
-    const aiMessage = result.text;
+    const aiMessage = response.text;
 
     // 5. Save AI response to MongoDB
     chat.messages.push({
@@ -104,6 +106,15 @@ export const getChatHistory = async (req, res) => {
     if (!chat) return res.status(404).json({ error: "Chat session not found" });
 
     res.status(200).json({ messages: chat.messages });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+};
+
+export const getAllChats = async (req, res) => {
+  try {
+    const chats = await Chat.find().select("_id messages createdAt updatedAt");
+    res.status(200).json({ chats });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch chat history" });
   }

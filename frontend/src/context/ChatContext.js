@@ -1,0 +1,1 @@
+//Global context for managing active chat session & history
