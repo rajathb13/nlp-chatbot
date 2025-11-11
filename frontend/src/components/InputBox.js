@@ -1,1 +1,0 @@
-//Text input and send button

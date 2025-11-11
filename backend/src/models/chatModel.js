@@ -6,15 +6,23 @@
 
 import mongoose from "mongoose";
 
-const chatSchema = new mongoose.Schema(
+const messageSchema = new mongoose.Schema(
   {
-    messages: [{
-      role:{type:String, enum:["User", "AI"], required: true},
-      content: {type:String, required: true}
-    }],
+    role: { type: String, enum: ["User", "AI"], required: true },
+    content: { type: String, required: true },
   },
-  { timestamps: true } // to add created and updated timestamp
+  {
+    timestamps: true, // adds createdAt and updatedAt for each message
+    _id: true, // ensures each message gets its own _id
+  }
 );
 
-export const Chat = mongoose.model("Chat", chatSchema)
- 
+const chatSchema = new mongoose.Schema(
+  {
+    title: { type: String, default: "New Chat" },
+    messages: [messageSchema],
+  },
+  { timestamps: true } // to add created and updated timestamp for the chat
+);
+
+export const Chat = mongoose.model("Chat", chatSchema);

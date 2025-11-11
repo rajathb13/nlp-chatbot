@@ -1,1 +1,0 @@
-//Optional typing indicator or loading spinner during AI response generation

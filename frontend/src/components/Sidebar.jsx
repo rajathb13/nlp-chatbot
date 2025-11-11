@@ -1,42 +1,30 @@
 // src/components/Sidebar.jsx
 import React from "react";
+import ChatList from "./ChatList";
 
-const Sidebar = ({ chats, onNewChat, onSelectChat, activeChatId }) => {
+const Sidebar = ({ chats, onSelectChat, activeChat, onDeleteChat, isLoading }) => {
   return (
-    <div className="w-64 h-screen bg-gray-900 text-gray-200 flex flex-col border-r border-gray-800">
-      {/* New Chat Button */}
-      <div className="p-4 border-b border-gray-800">
-        <button
-          onClick={onNewChat}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold"
-        >
-          + New Chat
-        </button>
+    <div className="flex flex-col h-screen w-64 bg-[#1E1F22] text-white border-r border-gray-800">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-700">
+        <h2 className="text-lg font-semibold flex items-center space-x-2 mb-1">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <span>Chats {chats && chats.length > 0 && `(${chats.length})`}</span>
+        </h2>
       </div>
 
-      {/* Chats List */}
-      <div className="flex-1 overflow-y-auto">
-        {chats.length === 0 ? (
-          <p className="text-center text-gray-500 mt-6">No chats yet</p>
-        ) : (
-          <ul className="space-y-1 p-2">
-            {chats.map((chat) => (
-              <li
-                key={chat._id}
-                onClick={() => onSelectChat(chat._id)}
-                className={`p-3 rounded-lg cursor-pointer truncate ${
-                  activeChatId === chat._id
-                    ? "bg-gray-800 text-white"
-                    : "hover:bg-gray-800 text-gray-300"
-                }`}
-              >
-                {chat.messages.length > 0
-                  ? chat.messages[0].content.slice(0, 30) + "..."
-                  : "New Chat"}
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Chat List Component */}
+      <ChatList 
+        chats={chats}
+        onSelectChat={onSelectChat}
+        activeChat={activeChat}
+        onDeleteChat={onDeleteChat}
+        isLoading={isLoading}
+      />
+
+      {/* Model name footer */}
+      <div className="p-5 text-gray-400 border-t border-gray-700 text-md mb-1">
+        Model: <span className="text-gray-200">gemini-2.5-flash</span>
       </div>
     </div>
   );

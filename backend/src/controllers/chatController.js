@@ -1,6 +1,7 @@
 import { Chat } from "../models/chatModel.js";
 // Import the correctly instantiated GenerativeModel for chat operations.
 import { ai } from "../services/geminiService.js";
+import removeMarkdown from "remove-markdown";
 
 // WARNING: In-memory store; chats will be lost on server restart.
 const activeChats = {};
@@ -29,8 +30,6 @@ export const createNewChat = async (req, res) => {
     });
     activeChats[sessionId] = geminiChat;
 
-    console.log(activeChats)
-
     // Successful chat creation.
     res.status(201).json({ sessionId });
   } catch (error) {
@@ -41,7 +40,7 @@ export const createNewChat = async (req, res) => {
   }
 };
 
-// Send message to current chat
+// Send message to current chat with streaming
 export const sendMessageToChat = async (req, res) => {
   const { sessionId } = req.params;
   const { message } = req.body;
@@ -50,11 +49,23 @@ export const sendMessageToChat = async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
+  // Word count validation
+  const wordCount = message
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0).length;
+  if (wordCount > 500) {
+    return res.status(400).json({ error: "Message exceeds 500 word limit" });
+  }
+
   try {
     // 1. Get the chat from MongoDB
-    let chat  
+    let chat;
     if (sessionId) {
       chat = await Chat.findById(sessionId);
+      if (!chat) {
+        return res.status(404).json({ error: "Chat session not found" });
+      }
     } else {
       chat = new Chat({ messages: [] });
     }
@@ -65,36 +76,69 @@ export const sendMessageToChat = async (req, res) => {
       content: message,
     });
 
-    // 3. Get the Gemini chat instance
-    const geminiChat = activeChats[sessionId];
-    if (!geminiChat) {
-      return res.status(404).json({ error: "Gemini chat session not found" });
+    // 2a. Auto-generate title from first message (first 6 words)
+    if (chat.messages.length === 1) {
+      const words = message.trim().split(/\s+/);
+      const titleWords = words.slice(0, 6).join(" ");
+      chat.title = titleWords + (words.length > 6 ? "..." : "");
     }
 
-    // 4. Send message to Gemini and get response
-    const response = await geminiChat.sendMessage({
+    // 3. Get or recreate the Gemini chat instance
+    let geminiChat = activeChats[sessionId];
+    if (!geminiChat) {
+      // Recreate Gemini chat from existing message history in DB
+      const history = chat.messages.map((msg) => ({
+        role: mapToGeminiRole(msg.role),
+        parts: [{ text: msg.content }],
+      }));
+      geminiChat = ai.chats.create({
+        model: "gemini-2.5-flash",
+        history: history,
+      });
+      activeChats[sessionId] = geminiChat;
+    }
+
+    // 4. Set up Server-Sent Events (SSE) for streaming
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    let fullAiMessage = "";
+
+    // 5. Stream response from Gemini
+    const stream = await geminiChat.sendMessageStream({
       message: message,
     });
-    const aiMessage = response.text;
 
-    // 5. Save AI response to MongoDB
+    for await (const chunk of stream) {
+      const chunkText = chunk.text;
+      fullAiMessage += chunkText;
+
+      // Strip markdown from chunk and send to client
+      const cleanedChunk = removeMarkdown(chunkText);
+      res.write(`data: ${JSON.stringify({ chunk: cleanedChunk })}\n\n`);
+    }
+
+    // 6. Strip markdown from full message and save to DB
+    const cleanedAiMessage = removeMarkdown(fullAiMessage);
+
     chat.messages.push({
       role: "AI",
-      content: aiMessage,
+      content: cleanedAiMessage,
     });
     await chat.save();
 
-    // 6. Send response back to client
-    res.json({
-      message: aiMessage,
-      messages: chat.messages,
-    });
+    // 7. Send final event with complete message
+    res.write(
+      `data: ${JSON.stringify({ done: true, message: cleanedAiMessage })}\n\n`
+    );
+    res.end();
   } catch (error) {
     console.error("Send Message Error:", error);
-    res.status(500).json({
-      error: "Failed to process message",
-      message: error.message,
-    });
+    res.write(
+      `data: ${JSON.stringify({ error: "Failed to process message" })}\n\n`
+    );
+    res.end();
   }
 };
 
@@ -113,9 +157,42 @@ export const getChatHistory = async (req, res) => {
 
 export const getAllChats = async (req, res) => {
   try {
-    const chats = await Chat.find().select("_id messages createdAt updatedAt");
-    res.status(200).json({ chats });
+    const chats = await Chat.find().select(
+      "_id title messages createdAt updatedAt"
+    );
+    res.status(200).json(chats);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+};
+
+// Delete a chat
+export const deleteChat = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: "Session ID is required" });
+    }
+
+    const deletedChat = await Chat.findByIdAndDelete(sessionId);
+
+    if (!deletedChat) {
+      return res.status(404).json({ error: "Chat not found" });
+    }
+
+    // Also remove from active chats in memory
+    delete global.activeChats?.[sessionId];
+
+    res.status(200).json({
+      message: "Chat deleted successfully",
+      deletedId: sessionId,
+    });
+  } catch (error) {
+    console.error("Delete Chat Error:", error);
+    res.status(500).json({
+      error: "Failed to delete chat",
+      message: error.message,
+    });
   }
 };

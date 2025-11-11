@@ -1,36 +1,88 @@
-import './App.css'
+import React, { useState } from "react";
+import Sidebar from "./components/Sidebar.jsx";
+import ChatWindow from "./components/ChatWindow.jsx"
+import { useChats, useChatMessages, useSendMessage, useDeleteChat, useCreateChat } from "./hooks/useChats";
 
-function App() {
+const App = () => {
+  const [sessionId, setSessionId] = useState(null);
+  const [streamingMessage, setStreamingMessage] = useState("");
+  
+  // React Query hooks for fetching data
+  const { data: chats = [] } = useChats();
+  const { data: chatData } = useChatMessages(sessionId);
+  const messages = chatData?.messages || [];
+  
+  // React Query hooks for mutations
+  const { mutateAsync: sendMessage } = useSendMessage();
+  const { mutate: deleteChat } = useDeleteChat();
+  const { mutate: createChat } = useCreateChat();
+
+  // Handle sending a message with streaming
+  const handleSendMessage = async (userText) => {
+    setStreamingMessage(""); // Reset streaming message
+    
+    try {
+      await sendMessage({
+        sessionId,
+        message: userText,
+        onChunk: (chunk, fullMessage) => {
+          setStreamingMessage(fullMessage);
+        }
+      });
+      setStreamingMessage(""); // Clear after complete
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setStreamingMessage("");
+      throw error;
+    }
+  };
+
+  // Handle deleting a chat
+  const handleDeleteChat = (chatId) => {
+    deleteChat(chatId, {
+      onSuccess: () => {
+        if (sessionId === chatId) {
+          setSessionId(null);
+        }
+      }
+    });
+  };
+
+  // Handle creating a new chat
+  const handleNewChat = () => {
+    createChat(undefined, {
+      onSuccess: (data) => {
+        // Set the new chat as active
+        if (data?.sessionId) {
+          setSessionId(data.sessionId);
+        }
+      }
+    });
+  };
+
   return (
     <div className="flex h-screen">
-      {/* Left panel */}
-      <aside className="w-64 bg-white shadow-md p-4">
-        <h2 className="text-lg font-semibold mb-4">Chats</h2>
-        <ul>
-          <li className="p-2 rounded hover:bg-gray-100 cursor-pointer">Chat 1</li>
-          <li className="p-2 rounded hover:bg-gray-100 cursor-pointer">Chat 2</li>
-        </ul>
-      </aside>
+      {/* Sidebar on the left */}
+      <Sidebar 
+        chats={chats} 
+        onSelectChat={setSessionId}
+        activeChat={sessionId}
+        onDeleteChat={handleDeleteChat}
+        isLoading={false}
+      />
 
-      {/* Right panel */}
-      <main className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto p-4">
-          <p className="text-gray-700">Welcome to Gemini Chat Interface!</p>
-        </div>
-        <div className="border-t p-4 flex items-center">
-          <input
-            type="text"
-            placeholder="Type your message..."
-            className="flex-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <button className="ml-3 bg-blue-500 text-white px-4 py-2 rounded-lg">
-            Send
-          </button>
-        </div>
-      </main>
+      {/* Chat Window on the right */}
+      <div className="flex-1">
+        <ChatWindow
+          sessionId={sessionId}
+          messages={messages}
+          onSend={handleSendMessage}
+          onNewChat={handleNewChat}
+          streamingMessage={streamingMessage}
+        />
+      </div>
     </div>
   );
-}
+};
 
 export default App;
-
