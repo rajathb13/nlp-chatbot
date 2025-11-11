@@ -15,15 +15,23 @@ const App = () => {
   // React Query hooks for mutations
   const { mutateAsync: sendMessage } = useSendMessage();
   const { mutate: deleteChat } = useDeleteChat();
-  const { mutate: createChat } = useCreateChat();
+  const { mutateAsync: createChat } = useCreateChat();
 
   // Handle sending a message with streaming
   const handleSendMessage = async (userText) => {
     setStreamingMessage(""); // Reset streaming message
     
     try {
+      // If no active session, create one first
+      let activeSessionId = sessionId;
+      if (!activeSessionId) {
+        const newChatData = await createChat();
+        activeSessionId = newChatData.sessionId;
+        setSessionId(activeSessionId);
+      }
+
       await sendMessage({
-        sessionId,
+        sessionId: activeSessionId,
         message: userText,
         onChunk: (chunk, fullMessage) => {
           setStreamingMessage(fullMessage);

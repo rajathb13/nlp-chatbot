@@ -49,12 +49,6 @@ const ChatWindow = ({ sessionId, messages = [], onSend, onNewChat, streamingMess
 
   // Handle sending messages
   const handleSendMessage = async (message) => {
-    if (!sessionId) {
-      setError("Please select or create a chat session to start messaging");
-      setShowModal(true);
-      return;
-    }
-
     setIsSending(true);
     setError(null);
 
@@ -184,8 +178,8 @@ const ChatWindow = ({ sessionId, messages = [], onSend, onNewChat, streamingMess
       <InputBox 
         onSendMessage={handleSendMessage}
         isLoading={isSending}
-        disabled={!sessionId}
-        placeholder={sessionId ? "Type your message..." : "Select or create a chat session first"}
+        disabled={false}
+        placeholder="Type your message..."
       />
       
       {/* Modal for errors */}
